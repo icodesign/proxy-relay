@@ -74,9 +74,9 @@ impl TargetAddr {
 }
 
 pub async fn relay<'a, L, R>(l: &'a mut L, r: &'a mut R) -> io::Result<(u64, u64)>
-    where
-        L: AsyncRead + AsyncWrite + Unpin + ?Sized,
-        R: AsyncRead + AsyncWrite + Unpin + ?Sized,
+where
+    L: AsyncRead + AsyncWrite + Unpin + ?Sized,
+    R: AsyncRead + AsyncWrite + Unpin + ?Sized,
 {
     let (mut lr, mut lw) = io::split(l);
     let (mut rr, mut rw) = io::split(r);
@@ -89,11 +89,11 @@ pub async fn relay_split<'a, LR, LW, RR, RW>(
     mut rr: &'a mut RR,
     mut rw: &'a mut RW,
 ) -> io::Result<(u64, u64)>
-    where
-        LR: AsyncRead + Unpin + ?Sized,
-        LW: AsyncWrite + Unpin + ?Sized,
-        RR: AsyncRead + Unpin + ?Sized,
-        RW: AsyncWrite + Unpin + ?Sized,
+where
+    LR: AsyncRead + Unpin + ?Sized,
+    LW: AsyncWrite + Unpin + ?Sized,
+    RR: AsyncRead + Unpin + ?Sized,
+    RW: AsyncWrite + Unpin + ?Sized,
 {
     let client_to_server = transfer(&mut lr, &mut rw);
     let server_to_client = transfer(&mut rr, &mut lw);
@@ -101,9 +101,9 @@ pub async fn relay_split<'a, LR, LW, RR, RW>(
 }
 
 pub async fn transfer<'a, R, W>(reader: &'a mut R, writer: &'a mut W) -> io::Result<u64>
-    where
-        R: AsyncRead + Unpin + ?Sized,
-        W: AsyncWrite + Unpin + ?Sized,
+where
+    R: AsyncRead + Unpin + ?Sized,
+    W: AsyncWrite + Unpin + ?Sized,
 {
     let len = io::copy(reader, writer).await?;
     writer.shutdown().await?;
