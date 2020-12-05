@@ -1,0 +1,32 @@
+on: [push]
+
+name: CI
+
+jobs:
+  build:
+    name: ${{ matrix.triple.target }}
+    runs-on: ${{ matrix.triple.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        triple:
+          # Tier 1
+          - { os: 'ubuntu-latest', target: 'aarch64-unknown-linux-gnu', cross: false }
+          - { os: 'ubuntu-latest', target: 'x86_64-unknown-linux-gnu', cross: false }
+          - { os: 'macos-latest', target: 'x86_64-apple-darwin', cross: false }
+
+          # Tier 2
+          - { os: 'macos-latest', target: "aarch64-apple-ios", cross: true }
+          - { os: 'ubuntu-latest', target: "aarch64-linux-android", cross: true }
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.triple.target }}
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --all-features --target=${{ matrix.triple.target }}
+          use-cross: ${{ matrix.triple.cross }}

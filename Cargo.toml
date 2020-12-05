@@ -1,0 +1,14 @@
+[package]
+name = "proxy-relay"
+version = "0.1.0"
+authors = ["icodesign <github@icodesign.me>"]
+edition = "2018"
+license-file = "LICENSE"
+description = "Helper methods for relaying tokio read/write stream"
+homepage = "https://github.com/icodesign/relay-rs"
+repository = "https://github.com/icodesign/relay-rs"
+
+[dependencies]
+futures = "0.3"
+tokio = { version = "0.3", features = ["rt", "io-util", "net"] }
+trust-dns-resolver = "0.19"
