@@ -5,8 +5,8 @@ authors = ["icodesign <github@icodesign.me>"]
 edition = "2018"
 license-file = "LICENSE"
 description = "Helper methods for relaying tokio read/write stream"
-homepage = "https://github.com/icodesign/relay-rs"
-repository = "https://github.com/icodesign/relay-rs"
+homepage = "https://github.com/icodesign/proxy-relay"
+repository = "https://github.com/icodesign/proxy-relay"
 
 [dependencies]
 futures = "0.3"
