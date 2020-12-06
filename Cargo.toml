@@ -10,5 +10,5 @@ repository = "https://github.com/icodesign/relay-rs"
 
 [dependencies]
 futures = "0.3"
-tokio = { version = "0.3", features = ["rt", "io-util", "net"] }
+tokio = { version = "0.2", features = ["rt-core", "io-util", "net"] }
 trust-dns-resolver = "0.19"
