@@ -1,9 +1,11 @@
+use crate::dns::DNSResolver;
 use futures::future;
 use std::net::SocketAddr;
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use trust_dns_resolver::proto::DnsHandle;
-use trust_dns_resolver::{AsyncResolver, ConnectionProvider};
+
+pub mod dns;
+pub mod tls;
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum TargetAddr {
@@ -34,11 +36,8 @@ impl TargetAddr {
         }
     }
 
-    pub async fn connect<C: DnsHandle, P: ConnectionProvider<Conn = C>>(
-        &self,
-        resolver: &AsyncResolver<C, P>,
-    ) -> io::Result<TcpStream> {
-        let remote_addr = self.resolve(resolver).await?;
+    pub async fn connect<D: DNSResolver>(&self, resolver: &D) -> io::Result<TcpStream> {
+        let remote_addr = resolver.resolve(self).await?;
         let mut err: io::Result<TcpStream> = Err(io::Error::new(
             io::ErrorKind::AddrNotAvailable,
             "Resolved addr is empty",
@@ -54,22 +53,6 @@ impl TargetAddr {
             }
         }
         err
-    }
-
-    pub async fn resolve<C: DnsHandle, P: ConnectionProvider<Conn = C>>(
-        &self,
-        resolver: &AsyncResolver<C, P>,
-    ) -> io::Result<Vec<SocketAddr>> {
-        match self {
-            TargetAddr::Host(host, port) => match resolver.lookup_ip(host.as_str()).await {
-                Ok(result) => Ok(result.iter().map(|x| SocketAddr::new(x, *port)).collect()),
-                Err(_e) => Err(io::Error::new(
-                    io::ErrorKind::AddrNotAvailable,
-                    "Could't resolve host",
-                )),
-            },
-            TargetAddr::Addr(addr) => Ok(vec![*addr]),
-        }
     }
 }
 

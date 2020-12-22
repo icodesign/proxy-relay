@@ -8,7 +8,16 @@ description = "Helper methods for relaying tokio read/write stream"
 homepage = "https://github.com/icodesign/proxy-relay"
 repository = "https://github.com/icodesign/proxy-relay"
 
+[features]
+native-tls = ["tokio-tls"]
+rustls-tls = ["tokio-rustls"]
+
 [dependencies]
+async-trait = "0.1"
 futures = "0.3"
 tokio = { version = "0.2", features = ["rt-core", "io-util", "net"] }
 trust-dns-resolver = "0.19"
+tokio-tls = { version = "0.3", optional = true }
+tokio-rustls = { version = "0.15", optional = true }
+bytes = "0.5"
+pin-project-lite = "0.2.0"
