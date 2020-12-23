@@ -9,15 +9,18 @@ homepage = "https://github.com/icodesign/proxy-relay"
 repository = "https://github.com/icodesign/proxy-relay"
 
 [features]
-native-tls = ["tokio-tls"]
-rustls-tls = ["tokio-rustls"]
+dns = ["trust-dns-resolver", "async-trait"]
+native-tls = ["tokio-tls", "tls"]
+rustls-tls = ["tokio-rustls", "tls"]
+tls = ["pin", "bytes"]
+pin = ["pin-project-lite"]
 
 [dependencies]
-async-trait = "0.1"
+async-trait = { version = "0.1", optional = true }
 futures = "0.3"
 tokio = { version = "0.2", features = ["rt-core", "io-util", "net"] }
-trust-dns-resolver = "0.19"
+trust-dns-resolver = { version = "0.19", optional = true }
 tokio-tls = { version = "0.3", optional = true }
 tokio-rustls = { version = "0.15", optional = true }
-bytes = "0.5"
-pin-project-lite = "0.2.0"
+bytes = { version = "0.5", optional = true }
+pin-project-lite = { version = "0.2", optional = true }

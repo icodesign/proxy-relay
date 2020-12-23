@@ -1,9 +1,11 @@
+#[cfg(feature = "dns")]
 use crate::dns::DNSResolver;
 use futures::future;
 use std::net::SocketAddr;
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+#[cfg(feature = "dns")]
 pub mod dns;
 pub mod tls;
 
@@ -36,6 +38,7 @@ impl TargetAddr {
         }
     }
 
+    #[cfg(feature = "dns")]
     pub async fn connect<D: DNSResolver>(&self, resolver: &D) -> io::Result<TcpStream> {
         let remote_addr = resolver.resolve(self).await?;
         let mut err: io::Result<TcpStream> = Err(io::Error::new(
