@@ -71,6 +71,12 @@ pub trait Connector<T: AsyncRead + AsyncWrite> {
 
 pub struct PlainConnector<D: DNSResolver>(D);
 
+impl<D: DNSResolver> PlainConnector<D> {
+    pub fn new(resolver: D) -> PlainConnector<D> {
+        PlainConnector(resolver)
+    }
+}
+
 #[async_trait]
 impl<D: DNSResolver + Send + Sync> Connector<TcpStream> for PlainConnector<D> {
     async fn connect(&self, addr: TargetAddr) -> io::Result<TcpStream> {
@@ -79,6 +85,12 @@ impl<D: DNSResolver + Send + Sync> Connector<TcpStream> for PlainConnector<D> {
 }
 
 pub struct TLSConnector<D: DNSResolver, T: TlsConnector>(D, T);
+
+impl<D: DNSResolver, T: TlsConnector> TLSConnector<D, T> {
+    pub fn new(resolver: D, tls: T) -> TLSConnector<D, T> {
+        TLSConnector(resolver, tls)
+    }
+}
 
 #[async_trait]
 impl<D: DNSResolver + Send + Sync, T: TlsConnector + Send + Sync> Connector<TlsStream<TcpStream>>
