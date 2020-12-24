@@ -1,13 +1,12 @@
-#[cfg(feature = "dns")]
 use crate::dns::DNSResolver;
+use async_trait::async_trait;
 use futures::future;
 use std::net::SocketAddr;
+use tls_api::{TlsConnector, TlsStream};
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-#[cfg(feature = "dns")]
 pub mod dns;
-pub mod tls;
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum TargetAddr {
@@ -24,6 +23,13 @@ impl TargetAddr {
         TargetAddr::Addr(addr)
     }
 
+    pub fn host(&self) -> String {
+        match self {
+            TargetAddr::Host(host, _) => host.to_owned(),
+            TargetAddr::Addr(addr) => addr.ip().to_string(),
+        }
+    }
+
     pub fn port(&self) -> u16 {
         match *self {
             TargetAddr::Host(_, port) => port,
@@ -38,7 +44,6 @@ impl TargetAddr {
         }
     }
 
-    #[cfg(feature = "dns")]
     pub async fn connect<D: DNSResolver>(&self, resolver: &D) -> io::Result<TcpStream> {
         let remote_addr = resolver.resolve(self).await?;
         let mut err: io::Result<TcpStream> = Err(io::Error::new(
@@ -56,6 +61,33 @@ impl TargetAddr {
             }
         }
         err
+    }
+}
+
+#[async_trait]
+pub trait Connector<T: AsyncRead + AsyncWrite> {
+    async fn connect(&self, addr: TargetAddr) -> io::Result<T>;
+}
+
+pub struct PlainConnector<D: DNSResolver>(D);
+
+#[async_trait]
+impl<D: DNSResolver + Send + Sync> Connector<TcpStream> for PlainConnector<D> {
+    async fn connect(&self, addr: TargetAddr) -> io::Result<TcpStream> {
+        addr.connect(&self.0).await
+    }
+}
+
+pub struct TLSConnector<D: DNSResolver, T: TlsConnector>(D, T);
+
+#[async_trait]
+impl<D: DNSResolver + Send + Sync, T: TlsConnector + Send + Sync> Connector<TlsStream<TcpStream>>
+    for TLSConnector<D, T>
+{
+    async fn connect(&self, addr: TargetAddr) -> io::Result<TlsStream<TcpStream>> {
+        let stream = addr.connect(&self.0).await?;
+        let res = self.1.connect(&addr.host(), stream).await?;
+        Ok(res)
     }
 }
 
