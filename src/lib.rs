@@ -2,7 +2,7 @@ use crate::dns::DNSResolver;
 use async_trait::async_trait;
 use futures::future;
 use std::net::SocketAddr;
-use tls_api::{TlsConnector, TlsStream};
+use tls_api::{TlsAcceptor, TlsConnector, TlsStream};
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -99,6 +99,42 @@ impl<D: DNSResolver + Send + Sync, T: TlsConnector + Send + Sync> Connector<TlsS
     async fn connect(&self, addr: TargetAddr) -> io::Result<TlsStream<TcpStream>> {
         let stream = addr.connect(&self.0).await?;
         let res = self.1.connect(&addr.host(), stream).await?;
+        Ok(res)
+    }
+}
+
+#[async_trait]
+pub trait Acceptor<T: AsyncRead + AsyncWrite, R: AsyncRead + AsyncWrite> {
+    async fn accept(&self, socket: T) -> io::Result<R>;
+}
+
+pub struct PlainAcceptor();
+
+impl PlainAcceptor {
+    pub fn new() -> PlainAcceptor {
+        PlainAcceptor {}
+    }
+}
+
+#[async_trait]
+impl Acceptor<TcpStream, TcpStream> for PlainAcceptor {
+    async fn accept(&self, socket: TcpStream) -> io::Result<TcpStream> {
+        Ok(socket)
+    }
+}
+
+pub struct TLSAcceptor<T: TlsAcceptor>(T);
+
+impl<T: TlsAcceptor> TLSAcceptor<T> {
+    pub fn new(tls: T) -> TLSAcceptor<T> {
+        TLSAcceptor(tls)
+    }
+}
+
+#[async_trait]
+impl<T: TlsAcceptor + Send + Sync> Acceptor<TcpStream, TlsStream<TcpStream>> for TLSAcceptor<T> {
+    async fn accept(&self, socket: TcpStream) -> io::Result<TlsStream<TcpStream>> {
+        let res = self.0.accept(socket).await?;
         Ok(res)
     }
 }
