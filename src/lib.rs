@@ -1,9 +1,13 @@
 use crate::dns::DNSResolver;
 use async_trait::async_trait;
+use bytes::{Buf, BufMut};
 use futures::future;
+use futures::task::Context;
+use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 use tls_api::{TlsAcceptor, TlsConnector, TlsStream};
 use tokio::io::{self, AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::macros::support::{Pin, Poll};
 use tokio::net::TcpStream;
 
 pub mod dns;
@@ -103,9 +107,94 @@ impl<D: DNSResolver + Send + Sync, T: TlsConnector + Send + Sync> Connector<TlsS
     }
 }
 
+pub trait AcceptedStream: AsyncRead + AsyncWrite {
+    fn stream_ref(&self) -> &TcpStream;
+    fn stream_mut(&mut self) -> &mut TcpStream;
+}
+
+macro_rules! async_read_proxy_impl {
+    () => {
+        unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
+            self.inner.prepare_uninitialized_buffer(buf)
+        }
+
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut self.get_mut().inner).poll_read(cx, buf)
+        }
+
+        fn poll_read_buf<B: BufMut>(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut B,
+        ) -> Poll<io::Result<usize>>
+        where
+            Self: Sized,
+        {
+            Pin::new(&mut self.get_mut().inner).poll_read_buf(cx, buf)
+        }
+    };
+}
+
+macro_rules! async_write_proxy_impl {
+    () => {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut self.get_mut().inner).poll_write(cx, buf)
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.get_mut().inner).poll_flush(cx)
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+        }
+
+        fn poll_write_buf<B: Buf>(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut B,
+        ) -> Poll<io::Result<usize>>
+        where
+            Self: Sized,
+        {
+            Pin::new(&mut self.get_mut().inner).poll_write_buf(cx, buf)
+        }
+    };
+}
+
+pub struct PlainAcceptedStream {
+    inner: TcpStream,
+}
+
+impl AsyncRead for PlainAcceptedStream {
+    async_read_proxy_impl!();
+}
+
+impl AsyncWrite for PlainAcceptedStream {
+    async_write_proxy_impl!();
+}
+
+impl AcceptedStream for PlainAcceptedStream {
+    fn stream_ref(&self) -> &TcpStream {
+        &self.inner
+    }
+
+    fn stream_mut(&mut self) -> &mut TcpStream {
+        &mut self.inner
+    }
+}
+
 #[async_trait]
-pub trait Acceptor<T: AsyncRead + AsyncWrite, R: AsyncRead + AsyncWrite> {
-    async fn accept(&self, socket: T) -> io::Result<R>;
+pub trait Acceptor<T: AcceptedStream> {
+    async fn accept(&self, socket: TcpStream) -> io::Result<T>;
 }
 
 pub struct PlainAcceptor();
@@ -117,9 +206,31 @@ impl PlainAcceptor {
 }
 
 #[async_trait]
-impl Acceptor<TcpStream, TcpStream> for PlainAcceptor {
-    async fn accept(&self, socket: TcpStream) -> io::Result<TcpStream> {
-        Ok(socket)
+impl Acceptor<PlainAcceptedStream> for PlainAcceptor {
+    async fn accept(&self, socket: TcpStream) -> io::Result<PlainAcceptedStream> {
+        Ok(PlainAcceptedStream { inner: socket })
+    }
+}
+
+pub struct TLSAcceptedStream {
+    inner: TlsStream<TcpStream>,
+}
+
+impl AsyncRead for TLSAcceptedStream {
+    async_read_proxy_impl!();
+}
+
+impl AsyncWrite for TLSAcceptedStream {
+    async_write_proxy_impl!();
+}
+
+impl AcceptedStream for TLSAcceptedStream {
+    fn stream_ref(&self) -> &TcpStream {
+        self.inner.get_ref()
+    }
+
+    fn stream_mut(&mut self) -> &mut TcpStream {
+        self.inner.get_mut()
     }
 }
 
@@ -132,10 +243,10 @@ impl<T: TlsAcceptor> TLSAcceptor<T> {
 }
 
 #[async_trait]
-impl<T: TlsAcceptor + Send + Sync> Acceptor<TcpStream, TlsStream<TcpStream>> for TLSAcceptor<T> {
-    async fn accept(&self, socket: TcpStream) -> io::Result<TlsStream<TcpStream>> {
+impl<T: TlsAcceptor + Send + Sync> Acceptor<TLSAcceptedStream> for TLSAcceptor<T> {
+    async fn accept(&self, socket: TcpStream) -> io::Result<TLSAcceptedStream> {
         let res = self.0.accept(socket).await?;
-        Ok(res)
+        Ok(TLSAcceptedStream { inner: res })
     }
 }
 
