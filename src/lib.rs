@@ -68,46 +68,7 @@ impl TargetAddr {
     }
 }
 
-#[async_trait]
-pub trait Connector<T: AsyncRead + AsyncWrite> {
-    async fn connect(&self, addr: TargetAddr) -> io::Result<T>;
-}
-
-pub struct PlainConnector<D: DNSResolver>(D);
-
-impl<D: DNSResolver> PlainConnector<D> {
-    pub fn new(resolver: D) -> PlainConnector<D> {
-        PlainConnector(resolver)
-    }
-}
-
-#[async_trait]
-impl<D: DNSResolver + Send + Sync> Connector<TcpStream> for PlainConnector<D> {
-    async fn connect(&self, addr: TargetAddr) -> io::Result<TcpStream> {
-        addr.connect(&self.0).await
-    }
-}
-
-pub struct TLSConnector<D: DNSResolver, T: TlsConnector>(D, T);
-
-impl<D: DNSResolver, T: TlsConnector> TLSConnector<D, T> {
-    pub fn new(resolver: D, tls: T) -> TLSConnector<D, T> {
-        TLSConnector(resolver, tls)
-    }
-}
-
-#[async_trait]
-impl<D: DNSResolver + Send + Sync, T: TlsConnector + Send + Sync> Connector<TlsStream<TcpStream>>
-    for TLSConnector<D, T>
-{
-    async fn connect(&self, addr: TargetAddr) -> io::Result<TlsStream<TcpStream>> {
-        let stream = addr.connect(&self.0).await?;
-        let res = self.1.connect(&addr.host(), stream).await?;
-        Ok(res)
-    }
-}
-
-pub trait AcceptedStream: AsyncRead + AsyncWrite {
+pub trait ConnectedStream: AsyncRead + AsyncWrite {
     fn stream_ref(&self) -> &TcpStream;
     fn stream_mut(&mut self) -> &mut TcpStream;
 }
@@ -170,19 +131,19 @@ macro_rules! async_write_proxy_impl {
     };
 }
 
-pub struct PlainAcceptedStream {
+pub struct PlainConnectedStream {
     inner: TcpStream,
 }
 
-impl AsyncRead for PlainAcceptedStream {
+impl AsyncRead for PlainConnectedStream {
     async_read_proxy_impl!();
 }
 
-impl AsyncWrite for PlainAcceptedStream {
+impl AsyncWrite for PlainConnectedStream {
     async_write_proxy_impl!();
 }
 
-impl AcceptedStream for PlainAcceptedStream {
+impl ConnectedStream for PlainConnectedStream {
     fn stream_ref(&self) -> &TcpStream {
         &self.inner
     }
@@ -192,8 +153,70 @@ impl AcceptedStream for PlainAcceptedStream {
     }
 }
 
+pub struct TLSConnectedStream {
+    inner: TlsStream<TcpStream>,
+}
+
+impl AsyncRead for TLSConnectedStream {
+    async_read_proxy_impl!();
+}
+
+impl AsyncWrite for TLSConnectedStream {
+    async_write_proxy_impl!();
+}
+
+impl ConnectedStream for TLSConnectedStream {
+    fn stream_ref(&self) -> &TcpStream {
+        self.inner.get_ref()
+    }
+
+    fn stream_mut(&mut self) -> &mut TcpStream {
+        self.inner.get_mut()
+    }
+}
+
 #[async_trait]
-pub trait Acceptor<T: AcceptedStream> {
+pub trait Connector<T: ConnectedStream> {
+    async fn connect(&self, addr: TargetAddr) -> io::Result<T>;
+}
+
+pub struct PlainConnector<D: DNSResolver>(D);
+
+impl<D: DNSResolver> PlainConnector<D> {
+    pub fn new(resolver: D) -> PlainConnector<D> {
+        PlainConnector(resolver)
+    }
+}
+
+#[async_trait]
+impl<D: DNSResolver + Send + Sync> Connector<PlainConnectedStream> for PlainConnector<D> {
+    async fn connect(&self, addr: TargetAddr) -> io::Result<PlainConnectedStream> {
+        let s = addr.connect(&self.0).await?;
+        Ok(PlainConnectedStream { inner: s })
+    }
+}
+
+pub struct TLSConnector<D: DNSResolver, T: TlsConnector>(D, T);
+
+impl<D: DNSResolver, T: TlsConnector> TLSConnector<D, T> {
+    pub fn new(resolver: D, tls: T) -> TLSConnector<D, T> {
+        TLSConnector(resolver, tls)
+    }
+}
+
+#[async_trait]
+impl<D: DNSResolver + Send + Sync, T: TlsConnector + Send + Sync> Connector<TLSConnectedStream>
+    for TLSConnector<D, T>
+{
+    async fn connect(&self, addr: TargetAddr) -> io::Result<TLSConnectedStream> {
+        let stream = addr.connect(&self.0).await?;
+        let res = self.1.connect(&addr.host(), stream).await?;
+        Ok(TLSConnectedStream { inner: res })
+    }
+}
+
+#[async_trait]
+pub trait Acceptor<T: ConnectedStream> {
     async fn accept(&self, socket: TcpStream) -> io::Result<T>;
 }
 
@@ -206,31 +229,9 @@ impl PlainAcceptor {
 }
 
 #[async_trait]
-impl Acceptor<PlainAcceptedStream> for PlainAcceptor {
-    async fn accept(&self, socket: TcpStream) -> io::Result<PlainAcceptedStream> {
-        Ok(PlainAcceptedStream { inner: socket })
-    }
-}
-
-pub struct TLSAcceptedStream {
-    inner: TlsStream<TcpStream>,
-}
-
-impl AsyncRead for TLSAcceptedStream {
-    async_read_proxy_impl!();
-}
-
-impl AsyncWrite for TLSAcceptedStream {
-    async_write_proxy_impl!();
-}
-
-impl AcceptedStream for TLSAcceptedStream {
-    fn stream_ref(&self) -> &TcpStream {
-        self.inner.get_ref()
-    }
-
-    fn stream_mut(&mut self) -> &mut TcpStream {
-        self.inner.get_mut()
+impl Acceptor<PlainConnectedStream> for PlainAcceptor {
+    async fn accept(&self, socket: TcpStream) -> io::Result<PlainConnectedStream> {
+        Ok(PlainConnectedStream { inner: socket })
     }
 }
 
@@ -243,10 +244,10 @@ impl<T: TlsAcceptor> TLSAcceptor<T> {
 }
 
 #[async_trait]
-impl<T: TlsAcceptor + Send + Sync> Acceptor<TLSAcceptedStream> for TLSAcceptor<T> {
-    async fn accept(&self, socket: TcpStream) -> io::Result<TLSAcceptedStream> {
+impl<T: TlsAcceptor + Send + Sync> Acceptor<TLSConnectedStream> for TLSAcceptor<T> {
+    async fn accept(&self, socket: TcpStream) -> io::Result<TLSConnectedStream> {
         let res = self.0.accept(socket).await?;
-        Ok(TLSAcceptedStream { inner: res })
+        Ok(TLSConnectedStream { inner: res })
     }
 }
 
