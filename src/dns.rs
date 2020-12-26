@@ -14,6 +14,12 @@ pub struct TrustDNSResolver<'a, C: DnsHandle, P: ConnectionProvider<Conn = C>> {
     inner: &'a AsyncResolver<C, P>,
 }
 
+impl<'a, C: DnsHandle, P: ConnectionProvider<Conn = C>> TrustDNSResolver<'a, C, P> {
+    pub fn new(inner: &'a AsyncResolver<C, P>) -> TrustDNSResolver<'a, C, P> {
+        TrustDNSResolver { inner }
+    }
+}
+
 #[async_trait]
 impl<'a, C: DnsHandle, P: ConnectionProvider<Conn = C>> DNSResolver for TrustDNSResolver<'a, C, P> {
     async fn resolve(&self, addr: &TargetAddr) -> io::Result<Vec<SocketAddr>> {
